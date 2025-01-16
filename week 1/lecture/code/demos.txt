@@ -1,0 +1,115 @@
+## Lecture 1
+
+### Git Local
+
+```
+git init
+# create a file
+git add file1.txt
+git commit -m "Initial commit"
+# create new file
+git add file2.txt
+git commit -m "Add file2"
+# change file1
+git add file1.txt
+git commit -m "Change file1"
+git log --oneline
+git checkout <commit-hash>
+git switch -c new-branch
+# add experimental changes
+git add experiment.txt
+git commit -m "Add experiment"
+git switch main
+```
+
+### Git Remote
+
+```
+git clone <url>
+git remote -v
+git add file3.txt
+git commit -m "Add file3"
+git push origin main
+git pull origin main
+```
+
+### R project
+
+### R console
+
+```
+1 + 1
+17 * 45
+sqrt(2)
+log(10)
+```
+
+### R console variables
+
+```
+x <- 1
+y <- 2
+z <- x + y
+z
+```
+
+### R console data types
+
+```
+x <- 1
+typeof(x)
+y <- 1.5
+typeof(y)
+z <- "Hello"
+typeof(z)
+```
+
+### R console vectors
+
+```
+x <- c(1, 2, 3, 4, 5)
+x
+y <- c(6, 7, 8, 9, 10)
+z <- x + y
+z
+k <- x + 5
+```
+
+### Functions
+
+```
+add_then_log_then_divide <- function(x, y) {
+    z <- x + y
+    log_z <- log10(z)
+    log_z_divided <- log_z / 2
+    return(log_z_divided)
+}
+add_then_log_then_divide(10, 20)
+```
+
+### Help
+
+```
+?log10
+??constants
+```
+
+### Libraries
+
+```
+install.packages("ggplot2")
+library(ggplot2)
+
+ggplot(mpg, aes(displ, hwy, colour = class)) + 
+  geom_point()
+```
+
+### Files
+
+R script file: `script.R` - Code
+Markdown file: `markdown.md` - Text
+Quarto file: `quarto.qmd` - Code and Text + Output
+
+### Quarto
+
+
