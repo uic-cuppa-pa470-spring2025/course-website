@@ -4,8 +4,7 @@
 **Email:** divij@uic.edu  
 **Venue:** Room 2236  
 **Office Hours:** 5:30pm to 6:30pm, Thursdays (Before the lecture)   
-**Course Website/GitHub:**   
-
+**Course Website/GitHub:** [https://github.com/uic-cuppa-pa470-spring2025/course-website](https://github.com/uic-cuppa-pa470-spring2025/course-website)
 
 **Course Description:**
 
@@ -113,7 +112,7 @@ Your final grade will be calculated as follows:
 
 * **Final Project (45%):**  This project will involve applying ML/AI techniques in R to a real-world problem relevant to the public sector. The project can be a proof of concept or a fully functional application.  Grading will consider the ambition and effort invested, and we will discuss project scoping throughout the semester.  A proposal is due in Week 5, with updates in Weeks 9 and 14. The final submission must also include a critical analysis of your project and its limitations.
 
-* **Engagement (25%):** Active participation in class discussions is essential. The classroom is structured as a dialogue; those comfortable should speak up! If you feel like you are falling behind in grades elsewhere, this is a good place to make up for it.  Participation will be graded on the quality of your contributions. This includes asking questions, answering questions, and engaging with your peers. I will behappy to provide extra credit for those who go above and beyond in their participation. If possible, please let me know if you will be absent. 
+* **Engagement (25%):** Active participation in class discussions is essential. The classroom is structured as a dialogue; those comfortable should speak up! If you feel like you are falling behind in grades elsewhere, this is a good place to make up for it.  Participation will be graded on the quality of your contributions. This includes asking questions, answering questions, and engaging with your peers. I will be happy to provide extra credit for those who go above and beyond in their participation. If possible, please let me know if you will be absent. 
  
 For the first late submission, no penalty will be applied. For subsequent late submissions, please try to ask me for an extension at least 24 hours before the deadline. Extensions will be granted on a case-by-case basis. I will be quite lenient, but please do not abuse this policy.
 
