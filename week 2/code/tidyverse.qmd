@@ -1,0 +1,391 @@
+---
+title: "Tidyverse"
+author: "Divij Sinha"
+format: html
+---
+
+# Tidyverse Examples
+
+## Install and Load the libraries
+
+```{r setup}
+# install.packages("tidyverse") ## when/where to do?
+library(tidyverse)
+setwd("~/Documents/projects/course-website")
+
+knitr::opts_knit$set(root.dir = "~/Documents/projects/course-website")
+```
+
+## Read data in
+
+`csv` data from local
+
+```{r}
+df <- read_csv("sample_data.csv")
+df <- read_csv("week 2/code/sample_data.csv")
+df <- readr::read_csv("week 2/code/sample_data.csv")
+df <- tidyverse::read_csv("week 2/code/sample_data.csv")
+```
+
+excel data
+
+```{r}
+df <- readxl::read_excel("week 2/code/sample_data.xlsx")
+```
+
+Data from the textbook in `csv`
+
+```{r}
+df <- read_csv("https://raw.githubusercontent.com/DataScienceForPublicPolicy/data-sets/refs/heads/master/data/doe_usgulf.csv")
+df
+```
+
+Data from the textbook in `.Rda`
+
+```{r}
+# URL : https://github.com/DataScienceForPublicPolicy/data-sets/blob/master/data/chicago_crime.Rda
+
+# load("https://github.com/DataScienceForPublicPolicy/data-sets/raw/refs/heads/master/data/chicago_crime.Rda")
+
+load("week 2/code/chicago_crime.Rda")
+```
+
+
+## Simple manipulations 
+
+```{r}
+budget <- c(
+    "Captain’s Log, Stardate 1511.8. I have $10.20 for a big galactic mac.",
+    "The ensign has $1,20 in her pocket.",
+    "The ExO has $0.25 left after paying for overpriced warp core fuel.",
+    "Chief medical officer is the high roller with $53,13."
+)
+
+
+new <- str_replace_all(budget, ",", "\\.")
+funds <- str_extract_all(new, "\\$\\d{1,2}\\.\\d{2}", simplify = TRUE)
+funds <- str_replace_all(funds, "\\$", "")
+funds <- str_trim(funds)
+print(funds)
+money <- as.numeric(funds)
+print(paste0("Total galactic big mac funds = $", sum(money)))
+
+```
+
+Extras: explore `lubridate` for working with dates
+
+Extras: think about Personally Identifiying Information
+
+Extras: Record Linkage
+
+## Tidying data
+
+```{r}
+billboard %>%
+    pivot_longer(
+        cols = starts_with("wk"),
+        names_to = "week",
+        values_to = "rank"
+    ) %>%
+    mutate(
+        week = parse_number(week)
+    )
+```
+
+## Cleaning data
+
+```{r}
+# install.packages("nycflights13")
+library(nycflights13)
+flights
+```
+
+**What is the average delay time for each airline?**
+
+```{r}
+# Calculate average delay time for each airline
+avg_delay <- flights %>%
+    group_by(carrier) %>%
+    summarise(
+        avg_arr_delay = mean(arr_delay, na.rm = TRUE),
+        avg_dep_delay = mean(dep_delay, na.rm = TRUE)
+    )
+
+print(avg_delay)
+```
+
+**Which day of the week has the highest number of flights?**
+
+```{r}
+# Add a day of the week column
+flights <- flights %>%
+    mutate(day_of_week = wday(time_hour, label = TRUE))
+
+# Calculate the number of flights for each day of the week
+flights_per_day <- flights %>%
+    group_by(day_of_week) %>%
+    summarise(num_flights = n())
+
+print(flights_per_day)
+```
+
+**What is the total number of flights for each destination?**
+
+```{r}
+# Calculate the total number of flights for each destination
+flights_per_dest <- flights %>%
+    group_by(dest) %>%
+    summarise(num_flights = n())
+
+print(flights_per_dest)
+```
+
+**Which flights have the longest departure delays?**
+
+```{r}
+# Find the flights with the longest departure delays
+longest_dep_delays <- flights %>%
+    filter(!is.na(dep_delay)) %>%
+    arrange(desc(dep_delay)) %>%
+    head(10)
+
+print(longest_dep_delays)
+```
+
+**What is the proportion of flights that are delayed by more than 30 minutes?**
+
+```{r}
+# Calculate the proportion of flights delayed by more than 30 minutes
+delay_proportion <- flights %>%
+    mutate(delayed_30 = ifelse(arr_delay > 30, 1, 0)) %>%
+    summarise(proportion_delayed = mean(delayed_30, na.rm = TRUE))
+
+print(delay_proportion)
+```
+
+
+## EDA
+
+```{r}
+glimpse(flights)
+```
+
+```{r}
+summary(flights)
+```
+
+```{r}
+# Summary statistics
+summary_stats <- flights %>%
+    summarise(
+        total_flights = n(),
+        avg_arr_delay = mean(arr_delay, na.rm = TRUE),
+        avg_dep_delay = mean(dep_delay, na.rm = TRUE),
+        avg_air_time = mean(air_time, na.rm = TRUE),
+        avg_distance = mean(distance, na.rm = TRUE)
+    )
+
+print(summary_stats)
+
+summary_stats <- flights %>%
+    summarise(
+        total_flights = n(),
+        avg_arr_delay = mean(arr_delay),
+        avg_dep_delay = mean(dep_delay),
+        avg_air_time = mean(air_time),
+        avg_distance = mean(distance)
+    )
+
+print(summary_stats)
+```
+
+```{r}
+missing_values <- flights %>%
+    summarise_all(~ sum(is.na(.)))
+
+print(missing_values)
+
+missing_frac <- flights %>%
+    summarise_all(~ sum(is.na(.)) / n())
+
+print(missing_frac)
+```
+
+## ggplot
+
+```{r}
+
+# 1. Distribution of Arrival Delays
+ggplot(flights, aes(x = arr_delay)) +
+    geom_histogram(binwidth = 10, fill = "blue", color = "black") +
+    labs(title = "Distribution of Arrival Delays", x = "Arrival Delay (minutes)", y = "Frequency")
+
+# 2. Number of Flights per Carrier
+flights_per_carrier <- flights %>%
+    group_by(carrier) %>%
+    summarise(num_flights = n())
+
+ggplot(flights_per_carrier, aes(x = carrier, y = num_flights)) +
+    geom_bar(stat = "identity", fill = "green", color = "black") +
+    labs(title = "Number of Flights per Carrier", x = "Carrier", y = "Number of Flights")
+
+# 3. Average Delay per Month
+avg_delay_per_month <- flights %>%
+    group_by(month) %>%
+    summarise(
+        avg_arr_delay = mean(arr_delay, na.rm = TRUE),
+        avg_dep_delay = mean(dep_delay, na.rm = TRUE)
+    )
+
+ggplot(avg_delay_per_month, aes(x = factor(month), y = avg_arr_delay)) +
+    geom_line(group = 1, color = "red") +
+    geom_point(color = "red") +
+    labs(title = "Average Arrival Delay per Month", x = "Month", y = "Average Arrival Delay (minutes)")
+
+# 4. Relationship between Air Time and Distance
+ggplot(flights, aes(x = distance, y = air_time)) +
+    geom_point(alpha = 0.3) +
+    labs(title = "Relationship between Air Time and Distance", x = "Distance (miles)", y = "Air Time (minutes)")
+
+# 5. Departure Delays by Carrier
+ggplot(flights, aes(x = carrier, y = dep_delay)) +
+    geom_boxplot(fill = "orange", color = "black") +
+    labs(title = "Departure Delays by Carrier", x = "Carrier", y = "Departure Delay (minutes)")
+
+```
+
+
+```{r}
+flights %>%
+    slice_sample(prop = 0.01) %>%
+    ggplot(., aes(x = distance, y = air_time)) +
+    geom_point(alpha = 0.3) +
+    labs(title = "Relationship between Air Time and Distance", x = "Distance (miles)", y = "Air Time (minutes)")
+
+
+flights %>%
+    slice_sample(n = 1000) %>%
+    ggplot(., aes(x = distance, y = air_time)) +
+    geom_point(alpha = 0.3) +
+    labs(title = "Relationship between Air Time and Distance", x = "Distance (miles)", y = "Air Time (minutes)")
+
+
+flights %>%
+    ggplot(., aes(x = distance, y = air_time)) +
+    geom_smooth() +
+    labs(title = "Relationship between Air Time and Distance", x = "Distance (miles)", y = "Air Time (minutes)")
+
+flights %>%
+    ggplot(., aes(x = distance, y = air_time)) +
+    geom_smooth(method = "lm") +
+    labs(title = "Relationship between Air Time and Distance", x = "Distance (miles)", y = "Air Time (minutes)")
+
+
+flights %>%
+    ggplot(., aes(x = distance, y = air_time)) +
+    geom_point(alpha = 0.3) +
+    geom_smooth(method = "lm") +
+    labs(title = "Relationship between Air Time and Distance", x = "Distance (miles)", y = "Air Time (minutes)")
+
+
+flights %>%
+    slice_sample(n = 10) %>%
+    ggplot(., aes(x = distance, y = air_time)) +
+    geom_point(alpha = 0.3) +
+    geom_smooth(method = "lm") +
+    labs(title = "Relationship between Air Time and Distance", x = "Distance (miles)", y = "Air Time (minutes)")
+
+
+flights %>%
+    slice_sample(n = 100) %>%
+    ggplot(., aes(x = distance, y = air_time)) +
+    geom_point(alpha = 0.3) +
+    geom_smooth(method = "lm") +
+    labs(title = "Relationship between Air Time and Distance", x = "Distance (miles)", y = "Air Time (minutes)")
+```
+
+
+## Maps!
+
+```{r}
+# install.packages("sf")
+library(sf)
+
+load("week 2/code/chicago_crime.Rda")
+
+crimes_sf <- crimes %>%
+    filter(!is.na(latitude) & !is.na(longitude)) %>%
+    st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+ggplot(crimes_sf) +
+    geom_sf() +
+    labs(title = "Chicago Crime Data", x = "Longitude", y = "Latitude")
+```
+
+```{r}
+crimes_sf <- crimes %>%
+    filter(!is.na(latitude) & !is.na(longitude)) %>%
+    filter(latitude > 38) %>%
+    st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+ggplot(crimes_sf) +
+    geom_sf() +
+    labs(title = "Chicago Crime Data", x = "Longitude", y = "Latitude")
+```
+
+```{r}
+# install.packages("tigris")
+library(tigris)
+options(tigris_use_cache = TRUE)
+chicago_tracts <- tracts(state = "IL", county = "Cook", cb = TRUE)
+chicago_tracts
+```
+
+FIPS code - Federal Information Processing Series
+
+```{r}
+# Join the crime data with the census tracts
+crime_tracts <- st_join(crimes_sf, chicago_tracts, join = st_within)
+```
+
+CRS - Coordinate Reference System
+
+```{r}
+# Join the crime data with the census tracts
+crime_tracts <- st_join(crimes_sf, chicago_tracts %>% st_transform(4326), join = st_within)
+
+crime_tracts %>%
+    group_by(GEOID) %>%
+    summarize(n = n())
+
+crime_tracts %>%
+    st_drop_geometry() %>%
+    group_by(GEOID) %>%
+    summarize(n = n()) %>%
+    right_join(chicago_tracts, by = join_by(GEOID)) %>%
+    ggplot(data = .) +
+    geom_sf(aes(fill = n))
+
+
+crime_tracts %>%
+    st_drop_geometry() %>%
+    group_by(GEOID) %>%
+    summarize(n = n()) %>%
+    left_join(x = chicago_tracts, y = ., by = join_by(GEOID)) %>%
+    ggplot(data = .) +
+    geom_sf(aes(fill = n))
+```
+
+```{r}
+crime_tracts %>%
+    st_drop_geometry() %>%
+    group_by(GEOID) %>%
+    summarize(n = n()) %>%
+  arrange(desc(n))
+```
+
+
+```{r}
+
+```
+
