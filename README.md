@@ -53,14 +53,14 @@ Each week's lecture will be split into consist of two ~75 minute sessions:
 * Week 2 - January 23:
     - Part 1: Tidyverse + Data Wrangling (`tidyverse`)
     - Part 2: Can AI solve a problem?
-    - *Assignment 1 Due*
+    - *[Assignment 1](https://classroom.github.com/a/lNo4S76r)*
 * Week 3 - January 30:
     - Part 1: Data Visualization (`ggplot2`)
     - Part 2: Should AI solve a problem?
-    - *Assignment 2 Due*
 * Week 4 - February 6:
     - Part 1: Census data + Public Data (`tidycensus`)
     - Part 2: How does involving AI change the problem being asked?
+    - *[Assignment 2 Due](https://classroom.github.com/a/kKHwbZrS)*
 * Week 5 - February 13:
     - Part 1: Linear Regression (`lm`, `glm`, `tidymodels`)
     - Part 2: How to convince others AI should (or shouldn't) solve a problem?
