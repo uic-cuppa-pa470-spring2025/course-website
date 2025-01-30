@@ -1,0 +1,256 @@
+---
+title: "tidycensus"
+author: "Divij Sinha"
+format: html
+knitr:
+  opts_knit:
+    root.dir: "~/Documents/projects/course-website"
+---
+
+# Tidycensus
+
+## Setting the key
+
+```{r setup}
+#| output: FALSE
+
+library(tidyverse)
+library(tidycensus)
+library(tigris)
+library(sf)
+
+# .gitignore !
+
+# api_key <- read_file("week 3/api_key.txt") %>% trimws()
+# census_api_key(key=api_key, install = TRUE)
+```
+
+## Getting Decennial
+
+
+```{r}
+dhc_20 <- tidycensus::load_variables(2020, "dhc", cache = TRUE)
+dhc_20
+```
+
+```{r}
+dhc_20 %>% 
+  mutate(concept_trim = str_remove(concept, "\\(.*\\)")) %>%
+  group_by(concept_trim) %>% summarise(n = n()) %>% arrange(desc(n))
+```
+```{r}
+dhc_20 %>% filter(str_detect(concept, "POP")) %>% 
+  mutate(changed_label = str_trim(str_remove_all(label, "[!:]"))) %>%
+  filter(changed_label == "Total")
+```
+```{r}
+dhc_20 %>% filter(str_starts(name, "P1_")) %>% arrange(name)
+```
+
+```{r}
+total_pop <- tidycensus::get_decennial(geography = "county", variables = "P1_001N")
+total_pop
+
+```
+
+```{r}
+transport_vars <- tidycensus::load_variables(year=2020, dataset = "acs5", cache = TRUE) %>%
+  filter(str_starts(name, "B08301")) %>% 
+  filter(str_count(label, "\\!\\!") == 2) %>% select(name, label)
+```
+
+```{r}
+transport_pop <- tidycensus::get_acs(geography = "county", variables = transport_vars$name, year=2020) %>%
+  left_join(transport_vars, join_by(variable == name))
+transport_pop
+```
+
+```{r}
+transport_pop %>% group_by(variable) %>% slice_max(order_by = estimate, n = 1) 
+```
+
+```{r}
+transport_pop %>% 
+  left_join(total_pop, join_by(GEOID), suffix = c("_transport", "_pop")) %>%
+  # filter(value > 1e4) %>%
+  mutate(pop_perc = estimate/value) %>%
+  group_by(variable_transport) %>% 
+  slice_max(order_by = pop_perc, n = 1) 
+```
+
+```{r}
+counties_tigris <- tigris::counties(year = 2020, cb=TRUE, resolution = "20m", progress_bar=FALSE)
+counties_tigris
+```
+
+```{r}
+ggplot(data = counties_tigris) + geom_sf()
+```
+
+```{r}
+counties_tigris <- tigris::shift_geometry(counties_tigris)
+counties_tigris
+```
+
+```{r}
+ggplot(data = counties_tigris) + geom_sf()
+```
+
+```{r}
+#| warning: false
+transport_pop %>% 
+  left_join(total_pop, join_by(GEOID), suffix = c("_transport", "_pop")) %>%
+  filter(variable_transport == "B08301_016") %>%
+  mutate(pop_perc = estimate/value) %>%
+  left_join(x = counties_tigris, y = ., join_by(GEOID)) %>%
+  ggplot(data = .) +
+  geom_sf(aes(fill = pop_perc)) +
+  scale_fill_gradient(low = "white", high = "darkgreen", na.value = "white", name = "Percentage of population") +
+  ggthemes::theme_tufte() 
+
+```
+
+```{r}
+#| warning: false
+transport_pop %>% 
+  left_join(total_pop, join_by(GEOID), suffix = c("_transport", "_pop")) %>%
+  filter(variable_transport == "B08301_016") %>%
+  mutate(pop_perc = estimate/value) %>%
+  left_join(x = counties_tigris, y = ., join_by(GEOID)) %>%
+  ggplot(data = .) +
+  geom_sf(aes(fill = pop_perc), lwd=0.1) +
+  scale_fill_gradient(low = "white", high = "darkgreen",trans = "log", na.value = "white", name = "Percentage of population", labels = scales::label_percent()) +
+  ggthemes::theme_tufte() 
+
+```
+
+```{r}
+#| warning: false
+transport_pop %>% 
+  left_join(total_pop, join_by(GEOID), suffix = c("_transport", "_pop")) %>%
+  # filter(variable_transport != "B08301_002") %>%
+  mutate(pop_perc = estimate/value) %>%
+  left_join(x = counties_tigris, y = ., join_by(GEOID)) %>%
+  ggplot(data = .) +
+  geom_sf(aes(fill = pop_perc), color=NA) +
+  scale_fill_gradient(low = "white", high = "darkgreen",trans = "log", na.value = "white", name = "Percentage of population", labels = scales::label_percent()) +
+  facet_wrap(vars(label)) +
+  ggthemes::theme_tufte() 
+
+```
+
+
+```{r}
+transport_pop %>% 
+  left_join(total_pop, join_by(GEOID), suffix = c("_transport", "_pop")) %>%
+  group_by(GEOID, NAME_transport) %>%
+  summarise(
+perc_non_car = (sum(estimate) - 
+                sum(estimate[variable_transport != "B08301_002"])) / mean(value)
+  ) %>%
+  ungroup() %>% 
+  left_join(x = counties_tigris, y = ., join_by(GEOID)) %>%
+  ggplot(data = .) +
+  geom_sf(aes(fill = perc_non_car), color=NA) +
+  scale_fill_gradient(low = "white", high = "darkgreen",trans = "log", na.value = "white", name = "Percentage of population not using cars", labels = scales::label_percent())
+```
+
+
+```{r}
+transport_pop %>% 
+  left_join(total_pop, join_by(GEOID), suffix = c("_transport", "_pop")) %>%
+  group_by(GEOID, NAME_transport) %>%
+  summarise(
+perc_non_car = (sum(estimate) - 
+                sum(estimate[variable_transport != "B08301_002"])) / mean(value)
+  ) %>%
+  ungroup() %>% arrange(desc(perc_non_car))
+```
+
+```{r}
+total_pop  %>% filter(GEOID == "15005")
+```
+
+```{r}
+transport_pop %>% filter(GEOID == "15005")
+```
+
+
+```{r}
+total_pop_acs <- get_acs(geography = "county", variables = "B01001_001E", year = 2023)
+total_pop_acs %>% filter(GEOID == "15005")
+```
+
+
+
+```{r}
+transport_pop %>% 
+  left_join(total_pop, join_by(GEOID), suffix = c("_transport", "_pop")) %>%
+  filter(value > 10000) %>%
+  group_by(GEOID, NAME_transport) %>%
+  summarise(
+perc_non_car = (sum(estimate) - 
+                sum(estimate[variable_transport != "B08301_002"])) / mean(value)
+  ) %>%
+  ungroup() %>%
+  left_join(x = counties_tigris, y = ., join_by(GEOID)) %>%
+  ggplot(data = .) +
+  geom_sf(aes(fill = perc_non_car), color=NA) +
+  scale_fill_gradient(low = "white", high = "darkgreen", na.value = "lightgray", name = "Percentage of population not using cars", labels = scales::label_percent())
+```
+
+
+## Other mapping stuff!
+
+https://r-spatial.github.io/mapview/index.html
+
+```{r}
+# install.packages("mapview")
+library(mapview)
+
+transport_pop %>% 
+  left_join(total_pop, join_by(GEOID), suffix = c("_transport", "_pop")) %>%
+  filter(value > 10000) %>%
+  group_by(GEOID, NAME_transport) %>%
+  summarise(
+perc_non_car = (sum(estimate) - 
+                sum(estimate[variable_transport != "B08301_002"])) / mean(value)
+  ) %>%
+  ungroup() %>%
+  left_join(x = counties_tigris, y = ., join_by(GEOID)) %>%
+  mapview::mapview(zcol = "perc_non_car", label = "NAME_transport")
+```
+
+https://rstudio.github.io/leaflet/
+
+```{r}
+# install.packages("leaflet")
+library(leaflet)
+
+prep_data <- transport_pop %>% 
+  left_join(total_pop, join_by(GEOID), suffix = c("_transport", "_pop")) %>%
+  filter(value > 10000) %>%
+  group_by(GEOID, NAME_transport) %>%
+  summarise(
+perc_non_car = (sum(estimate) - 
+                sum(estimate[variable_transport != "B08301_002"])) / mean(value)
+  ) %>%
+  ungroup() %>%
+  left_join(x = counties_tigris, y = ., join_by(GEOID)) %>% 
+  st_transform(crs = 4326)
+
+mypalette <- colorNumeric(
+  palette = "viridis", domain = prep_data$perc_non_car,
+  na.color = "transparent"
+)
+
+leaflet(prep_data) %>%
+  addPolygons(
+    fillColor = ~ mypalette(perc_non_car),
+    stroke = FALSE,
+    fillOpacity = 0.75,
+  ) %>% 
+  addTiles() 
+```
+
+
