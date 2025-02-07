@@ -1,0 +1,382 @@
+---
+title: "linear regression"
+author: "Divij Sinha"
+format: html
+---
+
+# Linear Regression
+
+```{r setup}
+library(tidyverse)
+library(tidymodels)
+```
+
+
+```{r}
+home_sales_nyc <- read_csv("https://raw.githubusercontent.com/DataScienceForPublicPolicy/data-sets/refs/heads/master/data/home_sales_nyc.csv")
+home_sales_nyc
+```
+
+
+## Defining the problem 
+
+```{r}
+home_sales_nyc %>% select(land.square.feet, sale.price)
+```
+
+## Best guess for price?
+
+```{r}
+ggplot(data = home_sales_nyc) +
+  geom_histogram(aes(x = sale.price), binwidth = 1e5) +
+  scale_x_continuous(labels = scales::label_dollar()) +
+  geom_vline(xintercept = mean(home_sales_nyc$sale.price), color = "red") + 
+  geom_vline(xintercept = median(home_sales_nyc$sale.price), color = "blue")
+```
+
+### Errors
+
+```{r}
+home_sales_nyc %>%
+  mutate(
+    error = (sale.price - mean(sale.price)),
+    sq_error = (sale.price - mean(sale.price))^2
+    ) %>%
+  summarise(
+    mean_error = mean(error),
+    mean_sq_error = mean(sq_error),
+    root_mean_sq_error = sqrt(mean(sq_error)),
+  ) %>%
+  round()
+```
+
+## Best guess for price WITH other information?
+
+```{r}
+home_sales_nyc %>% select(gross.square.feet, sale.price) %>%
+  slice_head(n=20) %>%
+  ggplot(data = .) +
+  geom_point(aes(gross.square.feet, sale.price)) +
+  scale_y_continuous(labels = scales::label_dollar()) + 
+  geom_line(aes(gross.square.feet, sale.price), alpha = 0.1) + 
+  geom_abline(aes(intercept = 100000, slope = 100), color = "red") +
+  geom_abline(aes(intercept = 200000, slope = 3), color = "blue") +
+  geom_abline(aes(intercept = -900000, slope = 600), color = "purple") 
+```
+
+
+```{r}
+
+archive_slope <- c()
+archive_intercept <- c()
+archive_rmse <- c()
+
+
+min_error = Inf
+best_slope = 0
+best_intercept = 0
+
+for(i in 1:1000){
+  random_slope = runif(n=1,min=0, max=200)
+  random_intercept = runif(n=1,min=0, 1e6)
+  
+  rmse <- home_sales_nyc %>%
+  mutate(
+    sq_error = (sale.price - ((gross.square.feet*random_slope) + random_intercept))^2
+    ) %>%
+  summarise(
+    root_mean_sq_error = sqrt(mean(sq_error)),
+  ) %>%
+  pull(root_mean_sq_error)
+  if (rmse < min_error) {
+    min_error <- rmse
+    best_slope = random_slope
+    best_intercept = random_intercept
+  }
+  
+  
+  archive_slope <- c(archive_slope, random_slope)
+  archive_intercept <- c(archive_intercept, random_intercept)
+  archive_rmse <- c(archive_rmse, rmse)
+  
+}
+
+home_sales_nyc %>% select(gross.square.feet, sale.price) %>%
+  slice_sample(n=500) %>%
+  ggplot(data = .) +
+  geom_point(aes(gross.square.feet, sale.price), alpha = 0.1) +
+  scale_y_continuous(labels = scales::label_dollar()) + 
+  geom_abline(intercept = best_intercept, slope = best_slope, color = "orange") +
+  geom_text(x = 3000, y = 1000000, label = paste("slope: ", best_slope, "\nintercept:", best_intercept), color = "black") +
+    theme_minimal()
+
+```
+
+```{r}
+ggplot() +
+  geom_point(aes(x=archive_slope, y=archive_intercept, color=archive_rmse)) +
+  scale_color_viridis_c()
+```
+
+
+## Can we be smarter??
+
+Let's search the space
+
+```{r}
+
+prev_slope = runif(n=1,min=-100, max=200)
+prev_intercept = runif(n=1,min=-1e5, 1e6)
+
+prev_rmse <- home_sales_nyc %>%
+  mutate(
+    sq_error = (sale.price - ((gross.square.feet*start_slope) + start_intercept))^2
+    ) %>%
+  summarise(
+    root_mean_sq_error = sqrt(mean(sq_error)),
+  ) %>%
+  pull(root_mean_sq_error)
+
+for(i in 1:1000){
+  current_slope <- prev_slope + (direction * 0.5)
+  current_intercept <- prev_intercept + (direction * 100)
+  cur_rmse <- home_sales_nyc %>%
+  mutate(
+    sq_error = (sale.price - ((gross.square.feet*current_slope) + current_intercept))^2
+    ) %>%
+  summarise(
+    root_mean_sq_error = sqrt(mean(sq_error)),
+  ) %>%
+  pull(root_mean_sq_error)
+  if (cur_rmse > prev_rmse) {
+    direction = direction*(-1)
+  }
+  prev_rmse <- cur_rmse
+  prev_slope <- current_slope
+  prev_intercept <- current_intercept
+  
+  archive_slope <- c(archive_slope, prev_slope)
+  archive_intercept <- c(archive_intercept, prev_intercept)
+  archive_rmse <- c(archive_rmse, prev_rmse)
+
+  
+}
+
+home_sales_nyc %>% select(gross.square.feet, sale.price) %>%
+  slice_sample(n=500) %>%
+  ggplot(data = .) +
+  geom_point(aes(gross.square.feet, sale.price), alpha = 0.1) +
+  scale_y_continuous(labels = scales::label_dollar()) + 
+  geom_abline(intercept = current_intercept, slope = current_slope, color = "orange") +
+  geom_text(x = 3000, y = 1000000, label = paste("slope: ", best_slope, "\nintercept:", best_intercept), color = "black") +
+    theme_minimal()
+```
+
+
+```{r}
+ggplot() +
+  geom_point(aes(x=archive_slope, y=archive_intercept, color=archive_rmse)) +
+  scale_color_viridis_c()
+```
+
+
+```{r}
+library(plotly)
+
+plot_ly(x=archive_slope, y=archive_intercept, z=log(archive_rmse), color=log(archive_rmse), type="scatter3d", mode="markers")
+```
+
+back to slide 14
+
+
+## How to do this for linear regression
+
+```{r}
+lm_fit <- linear_reg() %>%
+  fit(formula = sale.price ~ gross.square.feet, data = home_sales_nyc) 
+
+lm_fit %>% tidy()
+```
+
+```{r}
+home_sales_nyc_w_pred <- cbind(home_sales_nyc, predict(lm_fit, home_sales_nyc))
+home_sales_nyc_w_pred %>%
+  select(sale.price, .pred)
+```
+
+```{r}
+home_sales_nyc_w_pred %>%
+  mutate(error = .pred - sale.price) %>%
+ggplot(data = .) +
+  geom_point(aes(x = sale.price, y = .pred, fill = error), pch=21, color = "grey", alpha=0.6, stroke=0.3) +
+  scale_x_continuous(labels = scales::label_dollar()) +
+  scale_y_continuous(labels = scales::label_dollar()) +
+  scale_fill_gradient2(mid="white") + theme_minimal()
+```
+
+
+
+
+```{r}
+home_sales_nyc_w_pred %>%
+  mutate(error = .pred - sale.price) %>% 
+  ggplot() +
+  geom_histogram(aes(x = error), binwidth = 10000) + theme_minimal() +
+  scale_x_continuous(labels = scales::label_dollar())
+```
+
+```{r}
+home_sales_nyc_w_pred %>%
+  mutate(sq_error = (.pred - sale.price)^2) %>% 
+  summarise(rmse = sqrt(mean(sq_error)))
+```
+```{r}
+home_sales_nyc_w_pred %>% 
+  metrics(truth = sale.price, estimate = .pred)
+```
+
+
+```{r}
+home_sales_nyc_w_pred %>%
+  mutate(resid = .pred - sale.price) %>% 
+  ggplot() +
+  geom_point(aes(x = .pred, y = resid))
+```
+
+
+```{r}
+home_sales_nyc_w_pred %>%
+  mutate(resid = .pred - sale.price) %>% 
+  ggplot() +
+  geom_point(aes(x = gross.square.feet, y = resid))
+```
+
+
+
+### Add more data
+
+```{r}
+lm_fit_2 <- linear_reg() %>%
+  fit(formula = sale.price ~ gross.square.feet + age + sale.year, data = home_sales_nyc) 
+
+lm_fit_2 %>% tidy()
+```
+
+```{r}
+lm_fit_2 %>% predict(home_sales_nyc) %>%
+  cbind(home_sales_nyc) %>%
+  metrics(truth = sale.price, estimate = .pred)
+```
+
+### Add one more?
+
+```{r}
+lm_fit_3 <- linear_reg() %>%
+  fit(formula = sale.price ~ gross.square.feet + age + sale.year + year.built, data = home_sales_nyc) 
+
+lm_fit_3 %>% tidy()
+```
+
+```{r}
+lm_fit_3 %>% predict(home_sales_nyc) %>%
+  cbind(home_sales_nyc) %>%
+  metrics(truth = sale.price, estimate = .pred)
+```
+
+### Add "unique" more data
+
+```{r}
+lm_fit_4 <- linear_reg() %>%
+  fit(formula = sale.price ~ gross.square.feet + land.square.feet + age + sale.year, data = home_sales_nyc) 
+
+lm_fit_4 %>% tidy()
+```
+
+```{r}
+lm_fit_4 %>% predict(home_sales_nyc) %>%
+  cbind(home_sales_nyc) %>%
+  metrics(truth = sale.price, estimate = .pred)
+```
+
+### Use data differently?
+
+```{r}
+lm_fit_5 <- linear_reg() %>%
+  fit(formula = sale.price ~ gross.square.feet + age + gross.square.feet*age + sale.year, data = home_sales_nyc) 
+
+lm_fit_5 %>% tidy()
+```
+
+```{r}
+lm_fit_5 %>% predict(home_sales_nyc) %>%
+  cbind(home_sales_nyc) %>%
+  metrics(truth = sale.price, estimate = .pred)
+```
+
+
+```{r}
+lm_fit_6 <- linear_reg() %>%
+  fit(formula = sale.price ~ gross.square.feet + age + gross.square.feet*age + I(gross.square.feet^2) + sale.year, data = home_sales_nyc) 
+
+lm_fit_6 %>% tidy()
+```
+
+
+```{r}
+lm_fit_6 %>% predict(home_sales_nyc) %>%
+  cbind(home_sales_nyc) %>%
+  metrics(truth = sale.price, estimate = .pred)
+```
+
+
+
+### Adding discrete data
+
+
+```{r}
+lm_fit_7 <- linear_reg() %>%
+  fit(formula = sale.price ~ gross.square.feet + age + gross.square.feet*age + I(gross.square.feet^2) + sale.year + I(factor(borough)), data = home_sales_nyc) 
+
+lm_fit_7 %>% tidy()
+```
+
+```{r}
+lm_fit_7 %>% predict(home_sales_nyc) %>%
+  cbind(home_sales_nyc) %>%
+  metrics(truth = sale.price, estimate = .pred)
+```
+
+
+```{r}
+lm(formula = sale.price ~ gross.square.feet + age + gross.square.feet*age + I(gross.square.feet^2) + sale.year + I(factor(borough)), data = home_sales_nyc) %>% summary()
+```
+
+
+```{r}
+
+home_sales_nyc <- home_sales_nyc %>% mutate(borough = as.factor(borough))
+
+model_recipe <- recipe(sale.price ~ gross.square.feet + age + sale.year + borough, 
+                      data = home_sales_nyc) %>%
+  step_center(all_numeric_predictors()) %>%
+  step_interact(terms = ~ gross.square.feet:age) %>%
+  step_poly(gross.square.feet, degree = 2) %>%
+  step_dummy(borough)
+
+lm_workflow <- workflow() %>%
+  add_recipe(model_recipe) %>%
+  add_model(linear_reg())
+
+lm_fit_7_new <- lm_workflow %>%
+  fit(data = home_sales_nyc)
+
+lm_fit_7_new %>% 
+  tidy()
+```
+
+
+```{r}
+lm_fit_7_new %>% predict(home_sales_nyc) %>%
+  cbind(home_sales_nyc) %>%
+  metrics(truth = sale.price, estimate = .pred)
+```
