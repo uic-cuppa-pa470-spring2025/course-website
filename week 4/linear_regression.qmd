@@ -208,7 +208,7 @@ home_sales_nyc_w_pred %>%
 home_sales_nyc_w_pred %>%
   mutate(error = .pred - sale.price) %>%
 ggplot(data = .) +
-  geom_point(aes(x = sale.price, y = .pred, fill = error), pch=21, color = "grey", alpha=0.6, stroke=0.3) +
+  geom_point(aes(x = sale.price, y = .pred, fill = error), pch=21, color = "grey", alpha=0.9, stroke=0.3) +
   scale_x_continuous(labels = scales::label_dollar()) +
   scale_y_continuous(labels = scales::label_dollar()) +
   scale_fill_gradient2(mid="white") + theme_minimal()
