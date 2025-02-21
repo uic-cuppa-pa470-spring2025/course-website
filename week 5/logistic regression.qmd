@@ -1,0 +1,208 @@
+---
+title: "logistic regression"
+format: html
+---
+
+```{r setup}
+library(tidyverse)
+library(tidymodels)
+```
+
+## Log Reg
+
+```{r}
+load("acs_health.rda")
+health <- health %>%
+  mutate(coverage = 1 - no.coverage)
+health
+```
+
+```{r}
+health %>%
+  pull(coverage) %>%
+  table()
+```
+
+
+```{r}
+ggplot(data = health) + geom_histogram(aes(x = age, group = coverage, fill = factor(coverage)), alpha = 0.4, binwidth = 1)
+
+ggplot(data = health) + geom_bar(aes(x = age, fill = factor(coverage), y = after_stat(prop)), 
+         position = "fill", 
+         stat = "count",
+         width = 1) +
+scale_y_continuous(labels = scales::percent)
+
+```
+
+
+```{r}
+linear_reg() %>%
+  fit(formula = coverage ~ age, data = health) %>%
+  tidy()
+```
+
+```{r}
+ggplot(data = health, aes(x = age, y = coverage)) + geom_count(alpha = 0.4) + geom_smooth(method = "lm")
+```
+
+```{r}
+
+health <- health %>% mutate(coverage = factor(coverage, levels = c(0, 1)))
+
+logistic_reg() %>%
+  fit(formula = coverage ~ 1, data = health) %>%
+  tidy()
+```
+
+```{r}
+
+log_reg_fit <- logistic_reg() %>%
+  fit(formula = coverage ~ age, data = health) 
+
+log_reg_fit %>%
+  tidy()
+```
+
+```{r}
+health %>% mutate(pred_y = (age * 0.03981371) - 0.17773347) %>% 
+  ggplot(data = .) + geom_point(aes(x = age, y = pred_y))
+```
+
+```{r}
+health %>% mutate(pred_y = (age * 0.03981371) - 0.17773347) %>% 
+  mutate(pred_p = exp(pred_y) / (1 + exp(pred_y))) %>%
+  ggplot(data = .) + geom_point(aes(x = age, y = pred_p))
+```
+
+
+
+```{r}
+
+log_reg_fit <- logistic_reg() %>%
+  fit(formula = coverage ~ age + race + sex+ cit + mar + schl, data = health) 
+
+log_reg_fit %>%
+  tidy()
+```
+
+
+```{r}
+log_reg_fit %>% predict(health) %>%
+  cbind(health) %>%
+  select(.pred_class, coverage) %>%
+  table()
+```
+
+```{r}
+log_reg_fit %>% predict(health) %>%
+  cbind(health) %>%
+  select(.pred_class, coverage) %>%
+  sensitivity(truth = coverage, estimate = .pred_class, event_level = "second")
+```
+```{r}
+log_reg_fit %>% predict(health) %>%
+  cbind(health) %>%
+  select(.pred_class, coverage) %>%
+  specificity(truth = coverage, estimate = .pred_class, event_level = "second")
+```
+
+```{r}
+log_reg_fit %>% predict(health) %>%
+  cbind(health) %>%
+  select(.pred_class, coverage) %>%
+  precision(truth = coverage, estimate = .pred_class, event_level = "second")
+```
+
+```{r}
+log_reg_fit %>% predict(health) %>%
+  cbind(health) %>%
+  select(.pred_class, coverage) %>%
+  recall(truth = coverage, estimate = .pred_class, event_level = "second")
+```
+
+
+```{r}
+log_reg_fit %>% predict(health) %>%
+  cbind(health) %>%
+  select(.pred_class, coverage) %>%
+  f_meas(truth = coverage, estimate = .pred_class, event_level = "second")
+```
+
+```{r}
+log_reg_fit %>% predict(health) %>%
+  cbind(health) %>%
+  select(.pred_class, coverage) %>%
+  accuracy(truth = coverage, estimate = .pred_class, event_level = "second")
+```
+
+
+
+```{r}
+
+# Split data
+set.seed(123)
+data_split <- initial_split(health, prop = 0.8)
+train_data <- training(data_split)
+test_data <- testing(data_split)
+
+# Define logistic regression model
+log_spec <- logistic_reg() %>%
+  set_engine("glm")
+
+# Create workflow
+log_wf <- workflow() %>%
+  add_model(log_spec) %>%
+  add_formula(coverage ~ age + race + sex+ cit + mar + schl)
+
+# Fit model
+fit <- fit(log_wf, data = train_data)
+
+# Evaluate model
+preds <- predict(fit, test_data) %>%
+  bind_cols(test_data)
+
+specificity(preds, truth = coverage, estimate = .pred_class, event_level = "second")
+
+```
+
+
+```{r}
+
+# Split data
+set.seed(123)
+data_split <- initial_split(health, prop = 0.8)
+train_data <- training(data_split)
+test_data <- testing(data_split)
+
+model_spec <- rand_forest(mtry = 4, trees = 100) %>%
+  set_mode("classification")
+
+# Create workflow
+log_wf <- workflow() %>%
+  add_model(model_spec) %>%
+  add_formula(coverage ~ age + race + sex+ cit + mar + schl)
+
+# Fit model
+fit <- fit(log_wf, data = train_data)
+
+# Evaluate model
+preds <- predict(fit, test_data) %>%
+  bind_cols(test_data)
+
+specificity(preds, truth = coverage, estimate = .pred_class, event_level = "second")
+
+```
+
+
+```{r}
+library(rpart.plot)
+
+# Extract the first tree from the Random Forest model
+
+tree_fit <- fit %>% 
+  pull_workflow_fit()
+rpart.plot(tree_fit$fit)
+
+
+```
