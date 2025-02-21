@@ -1,0 +1,264 @@
+---
+title: "Lasso and Ridge"
+author: "Divij"
+format: html
+---
+
+```{r setup}
+library(tidyverse)
+library(tidymodels)
+library(glmnet)
+```
+
+
+```{r}
+home_sales_nyc <- read_csv("https://raw.githubusercontent.com/DataScienceForPublicPolicy/data-sets/refs/heads/master/data/home_sales_nyc.csv")
+
+home_sales_nyc <- home_sales_nyc %>%
+  mutate(dummy = 1)
+
+home_sales_nyc
+```
+
+### Ridge and Lasso Regression
+
+```{r}
+# Create training/testing split
+set.seed(123)
+split <- initial_split(home_sales_nyc, prop = 0.8)
+train <- training(split)
+test <- testing(split)
+
+# Create and fit linear model
+lm_spec <- linear_reg() %>%
+    set_engine("lm")
+
+lm_fit <- lm_spec %>%
+    fit(sale.price ~ gross.square.feet, data = train)
+
+# Make predictions and bind to test data
+predictions <- predict(lm_fit, test) %>%
+    bind_cols(test)
+
+# Plot actual vs predicted values
+set.seed(123)
+ggplot(predictions %>% slice_sample(n = 100), aes(x = gross.square.feet, y = sale.price)) +
+    geom_point(alpha = 0.5) +
+    geom_line(aes(y = .pred), color = "orange", size = 1, alpha = 0.1) +
+    geom_point(alpha = 0.5, color = "red", aes(y = .pred)) +
+  geom_segment(alpha = 0.5, color = "blue", aes(yend = .pred)) +
+    labs(
+        x = "Gross Square Feet",
+        y = "Sale Price",
+    ) +
+  scale_y_continuous(labels = scales::label_dollar())
+
+```
+
+```{r}
+# Create training/testing split
+set.seed(123)
+split <- initial_split(home_sales_nyc, prop = 0.01)
+train <- training(split)
+test <- testing(split)
+
+# Create and fit linear model
+lm_spec <- linear_reg() %>%
+    set_engine("lm")
+
+lm_fit <- lm_spec %>%
+    fit(sale.price ~ gross.square.feet, data = train)
+
+# Make predictions and bind to test data
+predictions <- predict(lm_fit, test) %>%
+    bind_cols(test)
+
+test_sample <- predictions %>% slice_sample(n = 100)
+
+# Make predictions and bind to train data
+train_predictions <- predict(lm_fit, train) %>%
+    bind_cols(train)
+
+train_sample <- train_predictions %>% slice_sample(n = 100)
+
+# Plot actual vs predicted values
+ggplot() +
+    geom_point(data = train_sample, aes(x = gross.square.feet, y = sale.price), color = "darkgreen", alpha = 0.5) +
+    geom_line(data = train_sample, aes(x = gross.square.feet, y = .pred), color = "darkgreen", size = 1, alpha = 0.3) +
+  geom_segment(data = train_sample, aes(x = gross.square.feet, y = .pred, yend = sale.price), color = "green", size = 1, alpha = 0.3) +
+    geom_smooth(data = test_sample, aes(x = gross.square.feet, y = sale.price), color = "blue", size = 1, alpha = 0.3, method = "lm") +
+  geom_point(data = test_sample, aes(x = gross.square.feet, y = sale.price), color = "blue", alpha = 0.5)
+```
+
+```{r}
+# Create and fit ridge model
+set.seed(345)
+ridge_spec <- linear_reg(penalty = 500000, mixture = 0) %>% # I GUESSED LAMBDA
+    set_engine("glmnet")
+
+ridge_fit <- ridge_spec %>%
+    fit(sale.price ~ gross.square.feet + dummy, data = train %>% mutate(dummy = 1))
+
+lm_fit <- lm_spec %>%
+    fit(sale.price ~ gross.square.feet + dummy, data = train %>% mutate(dummy = 1))
+
+ridge_test_predictions <- predict(ridge_fit, test %>% mutate(dummy = 1)) %>%
+    bind_cols(test) %>%
+    rename(ridge_pred = .pred)
+
+lm_ridge_test_predictions <- predict(lm_fit, test %>% mutate(dummy = 1)) %>%
+    bind_cols(ridge_test_predictions) %>%
+    rename(lm_pred = .pred)
+
+
+ridge_train_predictions <- predict(ridge_fit, train %>% mutate(dummy = 1)) %>%
+    bind_cols(train) %>%
+    rename(ridge_pred = .pred)
+
+lm_ridge_train_predictions <- predict(lm_fit, train %>% mutate(dummy = 1)) %>%
+    bind_cols(ridge_train_predictions) %>%
+    rename(lm_pred = .pred)
+
+
+set.seed(345)
+train_sample <- lm_ridge_train_predictions %>% slice_sample(n = 100)
+test_sample <- lm_ridge_test_predictions %>% slice_sample(n = 100)
+
+
+ggplot() +
+    geom_point(data = train_sample, aes(x = gross.square.feet, y = sale.price), color = "darkgreen", alpha = 0.0) +
+    geom_line(data = train_sample, aes(x = gross.square.feet, y = lm_pred), color = "darkgreen", size = 1, alpha = 0.5) + 
+  geom_line(data = train_sample, aes(x = gross.square.feet, y = ridge_pred), color = "orange", size = 1, alpha = 0.5) + 
+  geom_point(data = test_sample, aes(x = gross.square.feet, y = sale.price), color = "blue", alpha = 0.5) +
+  geom_smooth(data = test_sample, aes(x = gross.square.feet, y = sale.price), color = "blue", size = 1, alpha = 0.5, method = "lm") 
+
+```
+
+### Ridge regression using finding lambda 
+
+```{r}
+set.seed(345)
+ridge_spec <- linear_reg(penalty = tune(), mixture = 0) %>% 
+    set_engine("glmnet")
+
+# Create cross validation folds
+cv_folds <- vfold_cv(train, v = 5)
+
+# Set up grid of lambda values to try
+lambda_grid <- grid_regular(penalty(range = c(-5, 5)), levels = 100)
+
+ridge_recipe <- recipe(sale.price ~ gross.square.feet + dummy, data = train)
+
+ridge_wf <- workflow() %>%
+  add_model(ridge_spec) %>%
+  add_recipe(ridge_recipe)
+
+# Tune the model
+tune_results <- tune_grid(
+    ridge_wf,
+    resamples = cv_folds,
+    grid = lambda_grid
+)
+
+# Find best lambda
+best_lambda <- select_best(tune_results, metric = "rmse")
+
+# Finalize workflow with best lambda
+final_ridge_workflow <- ridge_wf %>%
+    finalize_workflow(best_lambda)
+
+# Fit final model
+ridge_fit <- final_ridge_workflow %>%
+    fit(data = train)
+
+# Look at results
+ridge_fit %>%
+    tidy()
+
+
+ridge_test_predictions <- predict(ridge_fit, test) %>%
+    bind_cols(test) %>%
+    rename(ridge_pred = .pred)
+
+
+lm_fit <- workflow() %>%
+  add_model(linear_reg()) %>%
+  add_recipe(ridge_recipe) %>%
+    fit(data = train)
+
+lm_ridge_test_predictions <- predict(lm_fit, test) %>%
+    bind_cols(ridge_test_predictions) %>%
+    rename(lm_pred = .pred)
+
+
+rmse_ridge <- rmse(lm_ridge_test_predictions, truth = sale.price, estimate = ridge_pred)
+rmse_lm <- rmse(lm_ridge_test_predictions, truth = sale.price, estimate = lm_pred)
+
+print(paste("Ridge RMSE:", round(rmse_ridge$.estimate)))
+print(paste("LM RMSE:", round(rmse_lm$.estimate)))
+```
+
+### Lasso regression using finding lambda 
+
+```{r}
+set.seed(345)
+lasso_spec <- linear_reg(penalty = tune(), mixture = 1) %>% ## CHANGE HERE
+    set_engine("glmnet")
+
+# Create cross validation folds
+cv_folds <- vfold_cv(train, v = 5)
+
+# Set up grid of lambda values to try
+lambda_grid <- grid_regular(penalty(range = c(-5, 5)), levels = 100)
+
+lasso_recipe <- recipe(sale.price ~ gross.square.feet + dummy, data = train)
+
+lasso_wf <- workflow() %>%
+  add_model(lasso_spec) %>%
+  add_recipe(lasso_recipe)
+
+# Tune the model
+tune_results <- tune_grid(
+    lasso_wf,
+    resamples = cv_folds,
+    grid = lambda_grid
+)
+
+# Find best lambda
+best_lambda <- select_best(tune_results, metric = "rmse")
+
+# Finalize workflow with best lambda
+final_lasso_workflow <- lasso_wf %>%
+    finalize_workflow(best_lambda)
+
+# Fit final model
+lasso_fit <- final_lasso_workflow %>%
+    fit(data = train)
+
+# Look at results
+lasso_fit %>%
+    tidy()
+
+
+lasso_test_predictions <- predict(lasso_fit, test) %>%
+    bind_cols(test) %>%
+    rename(lasso_pred = .pred)
+
+
+lm_fit <- workflow() %>%
+  add_model(linear_reg()) %>%
+  add_recipe(lasso_recipe) %>%
+    fit(data = train)
+
+lm_lasso_test_predictions <- predict(lm_fit, test) %>%
+    bind_cols(lasso_test_predictions) %>%
+    rename(lm_pred = .pred)
+
+
+rmse_lasso <- rmse(lm_lasso_test_predictions, truth = sale.price, estimate = lasso_pred)
+rmse_lm <- rmse(lm_lasso_test_predictions, truth = sale.price, estimate = lm_pred)
+
+print(paste("Ridge RMSE:", round(rmse_lasso$.estimate)))
+print(paste("LM RMSE:", round(rmse_lm$.estimate)))
+```
+

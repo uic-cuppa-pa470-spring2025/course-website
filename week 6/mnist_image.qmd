@@ -1,0 +1,95 @@
+---
+title: "Untitled"
+format: html
+---
+
+```{r}
+library(tidymodels)
+library(tidyverse)
+library(xgboost)
+
+library(dslabs)
+
+mnist <- read_mnist(download = TRUE, destdir = ".")
+```
+
+
+```{r}
+mnist$train$labels
+```
+
+```{r}
+mnist$train$images[1,]
+```
+
+```{r}
+image(matrix(mnist$train$images[1,], nrow=28)[ , 28:1], axes = FALSE, col = grey.colors(255), asp=1)
+```
+
+```{r}
+train <- as_tibble(mnist$train$images)
+train <- train %>% bind_cols(as_tibble_col(mnist$train$labels, column_name = "Y")) %>%
+  mutate(Y = as.factor(Y)) %>%
+  mutate(
+    across(-Y, ~ . / 255) 
+  )
+
+train
+```
+
+```{r}
+test <- as_tibble(mnist$test$images)
+test <- test %>% bind_cols(as_tibble_col(mnist$test$labels, column_name = "Y")) %>%
+  mutate(Y = as.factor(Y))  %>%
+  mutate(
+    across(-Y, ~ . / 255) 
+  )
+
+test
+```
+
+
+```{r}
+mnist_recipe <- recipe(Y ~ . ,train) 
+
+rf_model <- rand_forest(engine = "ranger", mtry = 20, trees = 100, min_n = 10) %>%
+  set_mode("classification")
+
+mnist_wf <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(mnist_recipe)
+
+mnist_rf_fit <- mnist_wf %>% fit(train)
+
+test_predict <- augment(mnist_rf_fit, test)
+test_predict %>% metrics(truth = Y, estimate = .pred_class)
+```
+
+
+```{r}
+roc_curve(test_predict, Y, matches("pred_[0-9]")) %>%
+  ggplot() + 
+  geom_point(aes(x = 1-specificity, y = sensitivity, color = .threshold)) +
+  geom_line(aes(x = 1-specificity, y = sensitivity, color = .threshold)) +
+  geom_abline(slope = 1, intercept = 0, alpha = 0.2) +
+  scale_color_viridis_c() +
+  facet_wrap(~.level)
+```
+
+
+```{r}
+roc_curve(test_predict, Y, matches("pred_[0-9]")) %>%
+  mutate(youden_j = sensitivity + specificity - 1) %>%
+  group_by(.level) %>%
+  slice_max(youden_j)
+```
+
+
+```{r}
+roc_curve(test_predict, Y, matches("pred_[0-9]")) %>%
+  mutate(youden_j = sensitivity + specificity - 1) %>%
+  group_by(.level) %>%
+  slice_max(youden_j) %>% 
+  ungroup() %>%
+  summarise(median_threshold = median(.threshold))
+```

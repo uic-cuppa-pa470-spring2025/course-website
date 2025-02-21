@@ -1,0 +1,24 @@
+---
+title: "Loading in models"
+author: "Divij"
+format: html
+---
+
+
+```{r setup}
+library(tidyverse)
+library(tidymodels)
+```
+
+## Load models!
+
+```{r}
+boost_fit <- readRDS("week 6/boost_fit.rds")
+```
+
+```{r}
+
+new_data <- tibble(borough = factor(1), age = 25, gross.square.feet = 2000, sale.year = 2025)
+
+predict(boost_fit, new_data)
+```

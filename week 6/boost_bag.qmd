@@ -1,0 +1,121 @@
+---
+title: "Bagging and Boosting"
+author: "Divij"
+format: html
+---
+
+```{r setup}
+library(tidyverse)
+library(tidymodels)
+```
+
+
+```{r}
+home_sales_nyc <- read_csv("https://raw.githubusercontent.com/DataScienceForPublicPolicy/data-sets/refs/heads/master/data/home_sales_nyc.csv")
+home_sales_nyc
+```
+
+
+```{r}
+set.seed(123)
+home_sales_nyc <- home_sales_nyc %>% mutate(borough = as.factor(borough))
+home_split <- initial_split(home_sales_nyc, prop=0.8)
+train <- training(home_split)
+test <- testing(home_split)
+
+
+model_recipe <- recipe(sale.price ~ gross.square.feet + age + sale.year + borough, 
+                      data = train) %>%
+  step_interact(terms = ~ gross.square.feet:age) %>%
+  step_poly(gross.square.feet, degree = 2) %>%
+  step_dummy(borough) %>%
+  step_normalize(all_numeric_predictors())
+```
+
+## Random forest
+
+```{r}
+rf_model <- rand_forest(mode = "regression", engine = "ranger", mtry = 6, min_n = 5, trees = 100)
+
+rf_wf <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(model_recipe)
+
+rf_fit <- rf_wf %>% fit(train)
+
+rf_fit %>% predict(test) %>% bind_cols(test) %>% metrics(truth = sale.price, estimate = .pred)
+```
+
+## Random forest - BAGGED
+
+```{r}
+library(baguette)
+
+bag_model <- bag_tree(mode = "regression", min_n = 5) 
+
+bag_wf <- workflow() %>%
+  add_model(bag_model) %>%
+  add_recipe(model_recipe)
+
+bag_fit <- bag_wf %>% fit(train)
+
+bag_fit %>% predict(test) %>% bind_cols(test) %>% metrics(truth = sale.price, estimate = .pred)
+```
+
+## Boosted trees
+
+```{r}
+
+library(future)
+plan(multisession, workers = 8)
+
+library(xgboost)
+
+boost_model <- boost_tree(
+  mode = "regression",
+  trees = 100,
+  min_n = 6,
+  learn_rate = tune(),
+  loss_reduction = tune()
+
+) %>% 
+  set_engine("xgboost")
+
+# Create and fit workflow
+boost_wf <- workflow() %>%
+  add_model(boost_model) %>%
+  add_recipe(model_recipe)
+
+cv_folds <- vfold_cv(train, v = 10)
+
+learning_rate_loss_reduction_grid <- grid_regular(
+  loss_reduction(range = c(-10, 2)), 
+  learn_rate(range = c(-3, 0)), 
+  levels = 10)
+
+# Tune the model
+tune_results <- tune_grid(
+    boost_wf,
+    resamples = cv_folds,
+    grid = learning_rate_loss_reduction_grid,
+    control = control_grid(allow_par = TRUE, parallel_over = "everything")
+)
+
+best_vals <- select_best(tune_results, metric = "rmse")
+
+boost_wf <- boost_wf %>% finalize_workflow(best_vals)
+
+boost_fit <- boost_wf %>% fit(train)
+
+boost_fit %>% 
+  predict(test) %>% 
+  bind_cols(test) %>% 
+  metrics(truth = sale.price, estimate = .pred)
+```
+
+
+## Saving stuff
+
+```{r}
+saveRDS(boost_fit, "week 6/boost_fit.rds")
+```
