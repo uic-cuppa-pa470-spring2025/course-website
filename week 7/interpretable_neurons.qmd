@@ -1,0 +1,98 @@
+---
+title: "interpretable neurons"
+format: html
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r setup}
+library(tidyverse)
+library(tidycensus)
+library(tidymodels)
+library(nnet)
+```
+
+```{r}
+pums_vars <- pums_variables %>%
+    filter(year == 2023, survey == "acs1") %>%
+    distinct(var_code, var_label, data_type, level) %>%
+    filter(level == "person") %>%
+    mutate(var_full = paste0(var_label, "_", var_code))
+
+res <- pums_vars %>%
+    pull(var_code) %>%
+    get_pums(
+        variables = .,
+        state = "IL",
+        survey = "acs1",
+        year = 2023
+    )
+
+
+res_renamed <- res %>%
+    rename_with(~ pums_vars$var_full[match(., pums_vars$var_code)], .cols = all_of(pums_vars$var_code))
+
+```
+ - WAGP Wages or salary income past 12 months (use ADJINC to adjust to constant dollars)
+ - AGEP Age
+ - JWMNP Travel time to work
+ - MARHYP Year last married
+ - WKWN Weeks worked during past 12 months
+ - SCHL Educational attainment
+
+```{r}
+
+res_filter <- res %>% 
+  filter(
+    AGEP >= 18,
+    MARHYP != 1943
+  ) %>%
+  mutate(SCHL = as.numeric(SCHL))
+
+
+res_filter %>% select(WAGP, AGEP, JWMNP, MARHYP, WKWN, SCHL) %>% summary() %>% print()
+res_filter %>% count(JWTRNS) %>% print()
+
+```
+
+
+```{r}
+res_train_test <- initial_split(res_filter, strata = AGEP)
+res_train <- training(res_train_test)
+res_test <- testing(res_train_test)
+```
+
+
+```{r}
+set.seed(123)
+nnet_model <- mlp(
+  hidden_units = 5,
+  epochs = 200
+) %>%
+  set_engine("nnet") %>%
+  set_mode("regression")
+
+reg_recipe <- recipe(WAGP ~ AGEP + JWMNP + MARHYP + WKWN + SCHL, data = res_train) %>%
+  step_normalize(all_numeric())
+
+# Create workflow
+nnet_wf <- workflow() %>%
+  add_model(nnet_model) %>%
+  add_recipe(reg_recipe)
+  
+# Fit model
+nnet_fit <- nnet_wf %>% fit(data = res_train)
+
+res_pred <- nnet_fit %>% augment(res_test)
+res_pred %>% metrics(truth = PINCP, estimate = .pred)
+```
+
+```{r}
+parsnip::extract_fit_engine(nnet_fit) %>% plotnet(cex_val = 0.7, pos_col = "blue", neg_col = "red")
+```
