@@ -1,0 +1,47 @@
+---
+title: "Anthropic"
+format: html
+---
+
+## Quarto
+
+```{r}
+library(httr)
+library(jsonlite)
+
+# Your API key
+api_key <- ""
+
+# Define the API endpoint
+url <- "https://api.anthropic.com/v1/messages"
+
+# Prepare your message
+payload <- list(
+  model = "claude-3-haiku-20240307",
+  max_tokens = 1000,
+  messages = list(
+    list(
+      role = "user",
+      content = "Hello Claude, how can I use APIs in R?"
+    )
+  )
+)
+
+# Make the API call
+response <- POST(
+  url = url,
+  add_headers(
+    "anthropic-version" = "2023-06-01",
+    "x-api-key" = api_key,
+    "Content-Type" = "application/json"
+  ),
+  body = toJSON(payload, auto_unbox = TRUE)
+)
+
+# Parse the response
+result <- content(response, "parsed")
+
+# Access Claude's response
+claude_response <- result$content[[1]]$text
+print(claude_response)
+```

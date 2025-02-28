@@ -1,0 +1,177 @@
+---
+
+---
+
+```{r}
+# Load necessary packages
+library(tidycensus)
+library(tidyverse)
+library(sf)
+
+# Select variables relevant for predictive modeling in a policy context
+selected_vars <- c(
+    # outcome variable
+    "B19013_001", # Median household income
+
+
+    "B17001_002", # Population in poverty
+    "B25071_001", # Median gross rent as percentage of household income
+    "B27001_001", # Health insurance coverage total population
+    "B27001_002", # Health insurance coverage - with health insurance
+    "B23025_005", # Employment status - unemployed
+
+    # Demographic predictors
+    "B01001_001", # Total population
+    "B01002_001", # Median age
+    "B01002_002", # Median age - male
+    "B01002_003", # Median age - female
+    "B25077_001", # Median house value
+    "B25064_001", # Median gross rent
+
+    # Housing and household predictors
+    "B25002_001", # Total housing units
+    "B25002_003", # Vacant housing units
+    "B11001_001", # Total households
+    "B25008_002", # Owner occupied housing units
+    "B25106_001", # Tenure by housing costs - total
+
+    # Education predictors
+    "B15003_001", # Total population 25 years and over
+    "B15003_017", # High school graduate
+    "B15003_018", # GED or alternative credential
+    "B15003_022", # Bachelor's degree
+    "B15003_023", # Master's degree
+    "B15003_024", # Professional degree
+    "B15003_025", # Doctorate degree
+
+    # Transportation predictors
+    "B08301_001", # Total commuters
+    "B08301_003", # Commuters driving alone
+    "B08301_010", # Public transportation commuters
+    "B08301_019", # Worked from home
+    "B08303_001", # Travel time to work - total
+    "B08303_013", # Travel time to work 30-34 minutes
+
+    # Technology and internet access
+    "B28002_001", # Internet access - total
+    "B28002_002", # With an Internet subscription
+    "B28002_004", # With a broadband subscription
+
+    # Race and ethnicity
+    "B02001_001", # Total population by race
+    "B02001_002", # White population
+    "B02001_003", # Black/African American population
+    "B02001_004", # American Indian and Alaska Native population
+    "B02001_005", # Asian population
+    "B02001_006", # Native Hawaiian and Other Pacific Islander population
+    "B03003_003" # Hispanic or Latino population
+)
+
+# Get ACS data for Illinois
+il_acs_data <- get_acs(
+    geography = "tract",
+    variables = selected_vars,
+    state = "IL",
+    year = 2021,
+    geometry = TRUE,
+    output = "wide"
+) %>%
+    # First, remove margin of error columns
+    select(-ends_with("M")) %>%
+    # Then clean up column names, excluding the NAME column
+    rename_with(
+        ~ gsub("E$", "", .x), # Remove E suffix from estimate columns
+        ends_with("E") & !matches("NAME") # Exclude NAME from this operation
+    ) %>%
+    # Calculate derived variables
+    mutate(
+        # Race/ethnicity percentages
+        total_pop = B02001_001,
+        white_pct = B02001_002 / total_pop * 100,
+        black_pct = B02001_003 / total_pop * 100,
+        native_american_pct = B02001_004 / total_pop * 100,
+        asian_pct = B02001_005 / total_pop * 100,
+        pacific_islander_pct = B02001_006 / total_pop * 100,
+        hispanic_pct = B03003_003 / total_pop * 100,
+
+        # Education percentages
+        pop_25_over = B15003_001,
+        high_school_only_pct = (B15003_017 + B15003_018) / pop_25_over * 100,
+        bachelors_pct = B15003_022 / pop_25_over * 100,
+        graduate_degree_pct = (B15003_023 + B15003_024 + B15003_025) / pop_25_over * 100,
+
+        # Housing characteristics
+        homeownership_rate = B25008_002 / B11001_001 * 100,
+        vacancy_rate = B25002_003 / B25002_001 * 100,
+
+        # Transportation percentages
+        total_commuters = B08301_001,
+        drive_alone_pct = B08301_003 / total_commuters * 100,
+        public_transit_pct = B08301_010 / total_commuters * 100,
+        work_from_home_pct = B08301_019 / total_commuters * 100,
+        long_commute_pct = B08303_013 / total_commuters * 100,
+
+        # Internet access
+        internet_access_pct = B28002_002 / B28002_001 * 100,
+        broadband_access_pct = B28002_004 / B28002_001 * 100,
+
+        # Potential outcome variables
+        poverty_rate = B17001_002 / total_pop * 100,
+        health_insurance_rate = B27001_002 / B27001_001 * 100,
+        unemployment_rate = B23025_005 / (B23025_005 + (B01001_001 - B15003_001)) * 100
+    ) %>%
+    # Select final variables for modeling
+    select(
+        GEOID, NAME,
+        # outcome variable
+        median_income = B19013_001,
+        # poverty_rate,
+        # rent_to_income_ratio = B25071_001,
+        # health_insurance_rate,
+        # unemployment_rate,
+
+        # Demographic predictors
+        total_population = total_pop,
+        median_age = B01002_001,
+        median_age_male = B01002_002,
+        median_age_female = B01002_003,
+
+        # Housing predictors
+        median_house_value = B25077_001,
+        median_rent = B25064_001,
+        homeownership_rate,
+        vacancy_rate,
+
+        # Education predictors
+        high_school_only_pct,
+        bachelors_pct,
+        graduate_degree_pct,
+
+        # Transportation predictors
+        drive_alone_pct,
+        public_transit_pct,
+        work_from_home_pct,
+        long_commute_pct,
+
+        # Internet access
+        internet_access_pct,
+        broadband_access_pct,
+
+        # Race and ethnicity
+        white_pct,
+        black_pct,
+        native_american_pct,
+        asian_pct,
+        pacific_islander_pct,
+        hispanic_pct,
+        geometry
+    ) %>%
+    # Remove any rows with NA in key columns
+    filter(!is.na(median_income) & !is.na(total_population))
+
+# Save the data to avoid re-downloading
+saveRDS(il_acs_data, "il_acs_data.rds")
+
+# Quick check of the data
+summary(il_acs_data)
+```
