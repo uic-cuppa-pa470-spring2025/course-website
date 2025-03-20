@@ -1,0 +1,86 @@
+---
+title: "huggingface"
+format: html
+---
+
+## Hugging Face
+
+A repository of models that you can use! 
+
+Comes with an API that is functionally an API for many different models and providers
+
+
+```{r}
+library(httr)
+library(jsonlite)
+library(htmltools)
+
+
+token <- ""
+headers <- add_headers(
+  "Authorization" = "Bearer "
+                       )
+base_url <- "https://api-inference.huggingface.co/models/"
+```
+
+```{r}
+url <- paste0(base_url, "cardiffnlp/twitter-roberta-base-sentiment-latest")
+payload <- list(
+  inputs = "have a  day!"
+)
+
+
+response <- POST(
+  url = url,
+  config = headers,
+  body = toJSON(payload, auto_unbox = TRUE)
+)
+
+# Parse the response
+result <- content(response, "parsed")
+
+result
+```
+
+
+```{r}
+
+url <- paste0(base_url, "facebook/nllb-200-1.3B")
+payload <- list(
+  inputs = "Das Auto ist nicht sehr gut",
+  parameters = list(
+    src_lang = "deu_Latn",
+    tgt_lang = "eng_Latn"
+  )
+)
+
+
+response <- POST(
+  url = url,
+  config = headers,
+  body = toJSON(payload, auto_unbox = TRUE)
+)
+
+# Parse the response
+result <- content(response, "parsed")
+
+result
+```
+
+
+
+
+```{r}
+url <- paste0(base_url, "openmmlab/upernet-convnext-small")
+
+response <- POST(
+  url = url,
+  config = headers,
+  body = upload_file("IMG_0182.jpg")
+)
+
+# Parse the response
+result <- content(response, "parsed")
+
+result
+```

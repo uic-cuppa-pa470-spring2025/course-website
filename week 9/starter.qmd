@@ -1,0 +1,382 @@
+---
+title: "Machine Learning for Public Policy: Predicting Income Disparities with Census Data"
+author: "ML and AI for Public Policy Course"
+format: 
+  html:
+    toc: true
+    code-fold: show
+    theme: cosmo
+    fig-width: 10
+    fig-height: 7
+---
+
+```{r}
+library(tidycensus)
+library(tidyverse)
+library(sf)
+library(tidymodels)
+
+options(tigris_use_cache = TRUE)
+```
+
+```{r}
+# Select variables relevant for predictive modeling in a policy context
+selected_vars <- c(
+    # outcome variable
+    "B19013_001", # Median household income
+
+    "B17001_001", # Population in poverty TOTAL
+    "B17001_002", # Population in poverty
+    "B25071_001", # Median gross rent as percentage of household income
+    "B23025_002", # LABOR FORCE
+    "B23025_005", # Employment status - unemployed
+
+    # Demographic predictors
+    "B01001_001", # Total population
+    "B01002_001", # Median age
+    "B01002_002", # Median age - male
+    "B01002_003", # Median age - female
+    "B25077_001", # Median house value
+    "B25064_001", # Median gross rent
+
+    # Housing and household predictors
+    "B25002_001", # Total housing units
+    "B25002_003", # Vacant housing units
+    "B11001_001", # Total households
+    "B25008_001", # TOTAL POPULATION IN OCCUPIED HOUSING UNITS
+    "B25008_002", # TOTAL POPULATION IN OCCUPIED HOUSING UNITS - Owner
+    "B25106_001", # Tenure by housing costs - total
+
+    # Education predictors
+    "B15003_001", # Total population 25 years and over
+    "B15003_017", # High school graduate
+    "B15003_018", # GED or alternative credential
+    "B15003_019", # Some college, less than 1 year
+    "B15003_020", # Some college, 1 or more years
+    "B15003_021", # Associate's degree
+    "B15003_022", # Bachelor's degree
+    "B15003_023", # Master's degree
+    "B15003_024", # Professional degree
+    "B15003_025", # Doctorate degree
+
+    # Transportation predictors
+    "B08301_001", # Total commuters
+    "B08301_003", # Commuters driving alone
+    "B08301_010", # Public transportation commuters
+    "B08301_019", # WALKED
+    "B08303_001", # Travel time to work - total
+    "B08303_013", # Travel time to work 90+ minutes
+    "B08303_012", # Travel time to work 60-89 minutes
+    "B08303_011", # Travel time to work 45-59 minutes
+
+    # Technology and internet access
+    "B28002_001", # Internet access - total
+    "B28002_002", # With an Internet subscription
+    "B28002_004", # With a broadband subscription
+    "B28002_012", # INTERNET ACCESS WITHOUT A SUBSCRIPTION
+    "B28002_013", # NO INTERNET ACCESS
+
+    # Race and ethnicity
+    "B02001_001", # Total population by race
+    "B02001_002", # White population
+    "B02001_003", # Black/African American population
+    "B02001_004", # American Indian and Alaska Native population
+    "B02001_005", # Asian population
+    "B02001_006", # Native Hawaiian and Other Pacific Islander population
+    "B03003_003" # Hispanic or Latino population
+)
+
+if (file.exists("il_acs_data_raw.rds")) {
+    il_acs_data_raw <- readRDS("il_acs_data_raw.rds")
+} else {
+  il_acs_data_raw <- get_acs(
+      geography = "tract",
+      variables = selected_vars,
+      state = "IL",
+      year = 2022,
+      geometry = TRUE,
+      output = "tidy"
+  )
+}
+```
+
+### Are all of these variables and counties useful/good?
+
+```{r}
+il_acs_data_raw <- il_acs_data_raw %>% 
+  mutate(ratio = moe / (estimate + 0.001)) 
+
+il_acs_data_raw %>% summary()
+
+il_acs_data_raw %>% ggplot() + geom_histogram(aes(x = ratio))
+
+ il_acs_data_raw %>% filter(ratio < 10000) %>% ggplot() + geom_histogram(aes(x = ratio), binwidth = 1)
+
+il_acs_data_raw %>% st_drop_geometry() %>% group_by(variable) %>%
+  summarise(median_ratio = median(ratio, na.rm = TRUE)) %>%
+  arrange(desc(median_ratio))
+
+il_acs_data_raw %>% st_drop_geometry() %>% group_by(NAME) %>%
+  summarise(median_ratio = median(ratio, na.rm = TRUE)) %>%
+  arrange(desc(median_ratio)) 
+
+bad_counties <- il_acs_data_raw %>% st_drop_geometry() %>% group_by(NAME) %>%
+  summarise(median_ratio = median(ratio, na.rm = TRUE)) %>%
+  arrange(desc(median_ratio)) %>% filter(median_ratio >= 11000) %>% pull(NAME)
+
+il_acs_data_raw %>% st_drop_geometry() %>% filter(NAME %in% bad_counties) %>% arrange(NAME)
+
+il_acs_data_raw <- il_acs_data_raw %>% filter(!(NAME %in% bad_counties), !(variable %in% c("B02001_004", "B02001_006")))
+
+saveRDS(il_acs_data_raw, "il_acs_data_raw.rds")
+```
+
+```{r}
+
+if (file.exists("il_acs_data.rds")) {
+    il_acs_data <- readRDS("il_acs_data.rds")
+} else {
+# Get ACS data for Illinois
+  il_acs_data <- il_acs_data_raw %>% select(-c(moe, ratio)) %>% pivot_wider(id_cols = c("geometry", "GEOID", "NAME"), names_from = "variable", values_from = "estimate") %>%
+      # Calculate derived variables
+      mutate(
+          # Race/ethnicity percentages
+          total_pop = B02001_001,
+          white_pct = B02001_002 / total_pop * 100,
+          black_pct = B02001_003 / total_pop * 100,
+          asian_pct = B02001_005 / total_pop * 100,
+          hispanic_pct = B03003_003 / total_pop * 100,
+  
+          # Education percentages
+          pop_25_over = B15003_001,
+          high_school_only_pct = (B15003_017 + B15003_018) / pop_25_over * 100,
+          some_college_pct = (B15003_019 + B15003_020 + B15003_021) / pop_25_over * 100,
+          bachelors_pct = B15003_022 / pop_25_over * 100,
+          graduate_degree_pct = (B15003_023 + B15003_024 + B15003_025) / pop_25_over * 100,
+          less_than_high_school_pct = 100 - (high_school_only_pct + some_college_pct + bachelors_pct + graduate_degree_pct),
+  
+          # Housing characteristics
+          # homeownership_rate = B25008_002 / B11001_001 * 100,
+          homeownership_rate = B25008_002 / B25008_001 * 100,
+          vacancy_rate = B25002_003 / B25002_001 * 100,
+  
+          # Transportation percentages
+          total_commuters = B08301_001,
+          drive_alone_pct = B08301_003 / total_commuters * 100,
+          public_transit_pct = B08301_010 / total_commuters * 100,
+          walked_pct = B08301_019 / total_commuters * 100,
+          long_commute_pct = (B08303_011 + B08303_012 + B08303_013) / total_commuters * 100,
+  
+          # Internet access
+          internet_access_pct = (B28002_002 + B28002_012) / B28002_001 * 100,
+          broadband_access_pct = B28002_004 / B28002_001 * 100,
+          no_internet_access_pct = B28002_013 / B28002_001 * 100,
+  
+          # Potential outcome variables
+          poverty_rate = B17001_002 / B17001_001 * 100,
+          unemployment_rate = B23025_005 / B23025_002 * 100
+      ) %>%
+      # Select final variables for modeling
+      select(
+          GEOID, NAME,
+          # outcome variable
+          median_income = B19013_001,
+          poverty_rate,
+          unemployment_rate,
+  
+          # Demographic predictors
+          total_population = total_pop,
+          median_age = B01002_001,
+          median_age_male = B01002_002,
+          median_age_female = B01002_003,
+  
+          # Housing predictors
+          median_house_value = B25077_001,
+          median_rent = B25064_001,
+          median_rent_pct = B25071_001,
+          homeownership_rate,
+          vacancy_rate,
+  
+          # Education predictors
+          high_school_only_pct,
+          bachelors_pct,
+          graduate_degree_pct,
+          less_than_high_school_pct,
+          some_college_pct,
+  
+          # Transportation predictors
+          drive_alone_pct,
+          public_transit_pct,
+          walked_pct,
+          long_commute_pct,
+  
+          # Internet access
+          internet_access_pct,
+          broadband_access_pct,
+          no_internet_access_pct,
+  
+          # Race and ethnicity
+          white_pct,
+          black_pct,
+          asian_pct,
+          hispanic_pct,
+          geometry
+      ) %>%
+      # Remove any rows with NA in key columns
+      filter(!is.na(median_income) & !is.na(total_population))
+  
+  # Save the data to avoid re-downloading
+  saveRDS(il_acs_data, "il_acs_data.rds")
+}
+```
+
+```{r}
+# Quick check of the data
+summary(il_acs_data)
+```
+
+Log income, median_house_value -- what about rent?
+
+```{r}
+il_acs_data %>% ggplot() + geom_histogram(aes(x = median_income), binwidth = 5000)
+il_acs_data %>% ggplot() + geom_histogram(aes(x = log10(median_income)), binwidth = 0.05)
+
+
+il_acs_data %>% ggplot() + geom_histogram(aes(x = median_house_value), binwidth = 5000)
+il_acs_data %>% ggplot() + geom_histogram(aes(x = log10(median_house_value)), binwidth = 0.05)
+
+
+il_acs_data %>% ggplot() + geom_histogram(aes(x = median_rent), binwidth = 100)
+il_acs_data %>% ggplot() + geom_histogram(aes(x = log10(median_rent)), binwidth = 0.01)
+
+```
+
+```{r}
+il_acs_data <- il_acs_data %>%
+  mutate(
+    # log_median_income = log10(median_income), 
+    log_median_house_value = log10(median_house_value),
+    log_median_rent = log10(median_rent)
+) %>%
+  select(-c(median_house_value, median_rent))
+```
+
+```{r}
+il_acs_data <- il_acs_data %>% filter(!(is.na(log_median_house_value) | is.na(log_median_rent) | is.na(median_rent_pct)))
+```
+
+```{r}
+il_acs_data %>% summary()
+```
+
+```{r}
+il_acs_data %>% ggplot() + geom_histogram(aes(x = total_population), binwidth = 100)
+```
+
+```{r}
+ggplot(data = il_acs_data) +
+  geom_sf(aes(fill = median_income), color = NA) +
+  scale_fill_viridis_c(
+        option = "viridis",
+        name = "Median Household\nIncome ($)",
+        # labels =function(x) scales::dollar(10^x),
+        # transform = scales::transform_exp(base=10)
+        labels = scales::dollar_format()
+    )+
+    theme_minimal()
+```
+
+```{r}
+ggplot(data = il_acs_data %>% filter(grepl("Cook County", NAME))) +
+  geom_sf(aes(fill = median_income), color = NA) +
+  scale_fill_viridis_c(
+        option = "viridis",
+        name = "Median Household\nIncome ($)",
+        # labels =function(x) scales::dollar(10^x),
+        # transform = scales::transform_exp(base=10),
+        labels = scales::dollar_format()
+    )+
+    theme_minimal()
+```
+
+```{r}
+cor_matrix <- il_acs_data %>% st_drop_geometry() %>% select(where(is.numeric)) %>% cor() %>% round(digits = 2) 
+cor_matrix %>% as.data.frame.table() %>% filter(Var1 != Var2) %>% arrange(desc(abs(Freq)))
+```
+
+```{r}
+il_acs_data <- il_acs_data %>% select(-c(no_internet_access_pct, broadband_access_pct, median_age, poverty_rate))
+```
+
+```{r}
+il_acs_data
+```
+
+```{r}
+set.seed(42) 
+
+splits <- initial_split(il_acs_data %>% st_drop_geometry(), prop = 0.8)
+train_data <- training(splits)
+test_data <- testing(splits)
+
+cv_folds <- vfold_cv(train_data, v = 10)
+```
+
+```{r}
+il_acs_recipe <- recipe(median_income ~ ., data = train_data) %>%
+    step_rm(GEOID, NAME) %>%
+    step_dummy(all_nominal_predictors()) %>%
+    step_normalize(all_predictors()) %>%
+    step_zv()
+```
+
+
+## Linear Regression
+
+```{r}
+lm_wf <- workflow() %>%
+    add_model(linear_reg()) %>%
+    add_recipe(il_acs_recipe)
+
+lm_fit <- lm_wf %>% fit(data = train_data)
+
+lm_fit %>% tidy()
+
+lm_fit %>% augment(test_data) %>% metrics(truth = median_income, estimate = .pred)
+```
+
+
+## Linear Regression + LASSO
+
+```{r}
+
+lasso_ridge_model <- linear_reg(penalty = tune(), mixture = tune()) %>%
+  set_engine("glmnet")
+
+lasso_ridge_grid <- grid_regular(
+  penalty(range = c(-10, 3), trans = log10_trans()),
+  mixture(),
+  levels = 30
+)
+
+lasso_ridge_wf <- workflow() %>%
+    add_model(lasso_ridge_model) %>%
+    add_recipe(il_acs_recipe)
+
+lasso_ridge_grid_tuned <- tune_grid(
+  lasso_ridge_wf,
+  resamples = cv_folds,
+  grid = lasso_ridge_grid
+)
+
+lasso_ridge_grid_tuned %>%
+  collect_metrics() 
+
+tuned_vals <- lasso_ridge_grid_tuned %>% select_best(metric = "rmse")
+
+lasso_ridge_fit <- lasso_ridge_wf %>% finalize_workflow(tuned_vals) %>% fit(train_data)
+
+lasso_ridge_fit %>% tidy()
+
+lasso_ridge_fit %>% augment(test_data) %>% metrics(truth = median_income, estimate = .pred)
+```
