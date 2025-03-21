@@ -1,0 +1,37 @@
+---
+title: "Machine Learning for Public Policy: Predicting Impact of Pollution on Health using OECD Data"
+author: "ML and AI for Public Policy Course"
+format: 
+  html:
+    toc: true
+    code-fold: show
+    theme: cosmo
+    fig-width: 10
+    fig-height: 7
+---
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+```
+
+```{r}
+oecd_data_folder <- "week 10/oecd data/"
+oecd_health_status_file <- paste0(oecd_data_folder, "OECD.CFE.EDS,DSD_REG_HEALTH@DF_STATUS,2.0+all.csv")
+oecd_air_emissions_file <- paste0(oecd_data_folder, "OECD.ENV.EPI,DSD_AIR_EMISSIONS@DF_AIR_EMISSIONS,1.0+all.csv")
+oecd_air_pollution_file <- paste0(oecd_data_folder, "OECD.ENV.EPI,DSD_AIR_POL@DF_AIR_POLL,1.0+all.csv")
+oecd_drought_file <- paste0(oecd_data_folder, "OECD.ENV.EPI,DSD_ECH@EXT_DROUGHT,1.1+all.csv")
+oecd_fire_threat_file <- paste0(oecd_data_folder, "OECD.ENV.EPI,DSD_ECH@FIRE_THREAT,1.1+all.csv")
+
+
+oecd_health_status <- read_csv(oecd_health_status_file)
+oecd_air_emissions <- read_csv(oecd_air_emissions_file)
+oecd_air_pollution <- read_csv(oecd_air_pollution_file)
+oecd_drought <- read_csv(oecd_drought_file)
+oecd_fire_threat <- read_csv(oecd_fire_threat_file)
+```
+
+
+```{r}
+oecd_health_status
+```
