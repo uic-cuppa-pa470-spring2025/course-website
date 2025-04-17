@@ -1,0 +1,37 @@
+---
+title: "our own API"
+format: html
+---
+
+## Load libraries
+
+```{r}
+library(plumber)
+library(tidymodels)
+```
+
+
+## Load model
+
+```{r}
+model_fit <- readRDS("best_oecd_model")
+```
+
+You can add options to executable code like this 
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+
+
+```{r}
+#* Get model information
+#* @get /info
+function(){
+  return("Hello")
+}
+```

@@ -1,0 +1,344 @@
+---
+title: "Machine Learning for Public Policy: Predicting Impact of Pollution on Health using OECD Data"
+author: "ML and AI for Public Policy Course"
+format: 
+  html:
+    toc: true
+    code-fold: show
+    theme: cosmo
+    fig-width: 10
+    fig-height: 7
+---
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+```
+
+```{r}
+oecd_data_folder <- "oecd data/"
+oecd_health_status_file <- paste0(oecd_data_folder, "OECD.CFE.EDS,DSD_REG_HEALTH@DF_STATUS,2.0+all.csv")
+oecd_air_emissions_file <- paste0(oecd_data_folder, "OECD.ENV.EPI,DSD_AIR_EMISSIONS@DF_AIR_EMISSIONS,1.0+all.csv")
+oecd_air_pollution_file <- paste0(oecd_data_folder, "OECD.ENV.EPI,DSD_AIR_POL@DF_AIR_POLL,1.0+all.csv")
+oecd_drought_file <- paste0(oecd_data_folder, "OECD.ENV.EPI,DSD_ECH@EXT_DROUGHT,1.1+all.csv")
+oecd_fire_threat_file <- paste0(oecd_data_folder, "OECD.ENV.EPI,DSD_ECH@FIRE_THREAT,1.1+all.csv")
+
+
+oecd_health_status <- read_csv(oecd_health_status_file)
+oecd_air_emissions <- read_csv(oecd_air_emissions_file)
+oecd_air_pollution <- read_csv(oecd_air_pollution_file)
+oecd_drought <- read_csv(oecd_drought_file)
+oecd_fire_threat <- read_csv(oecd_fire_threat_file)
+```
+
+
+```{r}
+oecd_health_status
+```
+```{r}
+oecd_health_status %>% select(Measure, Age, `Unit of measure`) %>% unique()
+```
+
+
+```{r}
+oecd_health_status <- oecd_health_status %>% 
+  mutate(
+    Measure_Age = ifelse(
+      Measure == "Crude mortality rate" &  Age == "Total", 
+      "Crude Mortality Rate - Total",
+        ifelse(
+          Measure == "Crude mortality rate" &  Age == "Less than 15 years", 
+          "Crude Mortality Rate - Less than 15 years", 
+          Measure))) %>% 
+  select(TERRITORIAL_LEVEL, REF_AREA, `Reference area`, Measure_Age, Sex, TIME_PERIOD, OBS_VALUE, Country, `Observation status`)
+```
+
+```{r}
+oecd_air_emissions_ref_area <- oecd_air_emissions %>% select(REF_AREA) %>% unique()
+
+oecd_health_status_ref_area <- oecd_health_status %>% select(REF_AREA) %>% unique()
+
+oecd_air_pollution_ref_area <- oecd_air_pollution %>% select(REF_AREA) %>% unique()
+
+oecd_drought_ref_area <- oecd_drought %>% select(REF_AREA) %>% unique()
+
+oecd_fire_threat_ref_area <- oecd_fire_threat %>% select(REF_AREA) %>% unique()
+
+limited_ref_areas <-  inner_join(oecd_health_status_ref_area, oecd_air_pollution_ref_area, by = "REF_AREA") %>%
+  inner_join(oecd_drought_ref_area, by = "REF_AREA") %>%
+  inner_join(oecd_fire_threat_ref_area, by = "REF_AREA")
+
+limited_ref_areas
+```
+
+```{r}
+
+oecd_health_status_time_period <- oecd_health_status %>% select(TIME_PERIOD) %>% unique()
+
+oecd_air_pollution_time_period <- oecd_air_pollution %>% select(TIME_PERIOD) %>% unique()
+
+oecd_drought_time_period <- oecd_drought %>% select(TIME_PERIOD) %>% unique()
+
+oecd_fire_threat_time_period <- oecd_fire_threat %>% select(TIME_PERIOD) %>% unique()
+
+limited_time_periods <-  inner_join(oecd_health_status_time_period, oecd_air_pollution_time_period, by = "TIME_PERIOD") %>%
+  inner_join(oecd_drought_time_period, by = "TIME_PERIOD") %>%
+  inner_join(oecd_fire_threat_time_period, by = "TIME_PERIOD")
+
+limited_time_periods
+```
+```{r}
+oecd_air_pollution <- oecd_air_pollution %>% filter(Measure == "Mean population-weighted exposure") %>% select(REF_AREA, `Reference area`, Pollutant, `Unit of measure`, TIME_PERIOD, OBS_VALUE, `Observation status`)
+```
+
+
+```{r}
+oecd_drought <- oecd_drought %>% select(REF_AREA, `Reference area`, Measure, `Unit of measure`, TIME_PERIOD, OBS_VALUE, `Observation status`)
+```
+
+```{r}
+oecd_fire_threat <- oecd_fire_threat %>% filter(`Unit of measure` != "Square kilometres") %>% select(REF_AREA, `Reference area`, Measure, `Unit of measure`, TIME_PERIOD, OBS_VALUE, `Observation status`)
+```
+
+
+```{r}
+oecd_fire_threat_wider <- pivot_wider(oecd_fire_threat, id_cols = c(REF_AREA, TIME_PERIOD), values_from = OBS_VALUE, names_from = c(Measure, `Unit of measure`))
+
+oecd_drought_wider <- pivot_wider(oecd_drought, id_cols = c(REF_AREA, TIME_PERIOD), values_from = OBS_VALUE, names_from = c(Measure, `Unit of measure`))
+
+oecd_air_pollution_wider <- pivot_wider(oecd_air_pollution, id_cols = c(REF_AREA, TIME_PERIOD), values_from = OBS_VALUE, names_from = c(Pollutant, `Unit of measure`))
+
+
+oecd_health_status_wider<- pivot_wider(oecd_health_status, id_cols = c(REF_AREA, TIME_PERIOD), values_from = OBS_VALUE, names_from = c(Measure_Age, Sex)) %>% select(REF_AREA, TIME_PERIOD, `Age-adjusted mortality rate_Total`)
+
+```
+
+
+```{r}
+oecd_combined <- inner_join(oecd_fire_threat_wider, oecd_drought_wider, by = c("REF_AREA","TIME_PERIOD")) %>% inner_join(oecd_air_pollution_wider, by = c("REF_AREA","TIME_PERIOD")) %>% inner_join(oecd_health_status_wider, by = c("REF_AREA","TIME_PERIOD"))
+
+oecd_combined
+```
+
+```{r}
+oecd_combined %>% drop_na(`Age-adjusted mortality rate_Total`, `Forest exposure to areas at risk of burning_Percentage of forested area`) %>% summary()
+```
+```{r}
+ggplot(data = oecd_combined) + geom_point(aes(x = `Land soil moisture anomaly_Percentage change`, y =`Cropland soil moisture anomaly_Percentage change`))
+```
+
+```{r}
+oecd_combined <- oecd_combined %>% drop_na(`Age-adjusted mortality rate_Total`, `Forest exposure to areas at risk of burning_Percentage of forested area`) %>%
+  mutate(`Cropland soil moisture anomaly_Percentage change` = ifelse(is.na(`Cropland soil moisture anomaly_Percentage change`), `Land soil moisture anomaly_Percentage change`, `Cropland soil moisture anomaly_Percentage change`))
+
+
+oecd_combined %>% summary()
+```
+
+```{r}
+oecd_combined %>% filter(
+  `Amount of burned area_Percentage of land area` == max(`Amount of burned area_Percentage of land area`)
+)
+```
+#### LEARNING
+
+
+```{r}
+oecd_combined %>% head()
+```
+
+
+```{r}
+set.seed(42)
+train_test <- initial_split(oecd_combined, prop = 0.8)
+
+oecd_train <- training(train_test)
+oecd_test <- testing(train_test)
+```
+
+
+```{r}
+oecd_recipe <- recipe(`Age-adjusted mortality rate_Total` ~ ., data = oecd_train) %>%
+  step_normalize(all_numeric_predictors()) %>% 
+  update_role(REF_AREA, new_role = "id")
+
+oecd_wf <- workflow() %>%
+  add_recipe(oecd_recipe)
+```
+
+
+### Linear Regression
+
+```{r}
+linear_reg_simple <- linear_reg()
+
+oecd_linearreg_fit <- oecd_wf %>% add_model(linear_reg_simple) %>% fit(data = oecd_train)
+
+augment(oecd_linearreg_fit, oecd_test) %>% metrics(truth = `Age-adjusted mortality rate_Total`, estimate = .pred)
+
+```
+
+### Models to try
+
+
+- Linear regression
+- Linear regression W Lasso and Ridge
+- Random Forest Model
+- XGBoost model
+- Neural Neutwork
+
+
+### Linear Regression with Lasso and Ridge
+
+#### Lasso
+
+```{r}
+linear_lasso <- linear_reg(penalty = tune(), mixture = 1) %>%
+  set_engine("glmnet")
+
+oecd_wf_lasso <- oecd_wf %>%
+  add_model(linear_lasso)
+
+cross_validation_folds <- vfold_cv(oecd_train, v = 20)
+
+penalty_grid <- grid_regular(penalty(range = c(-20, 0)), levels = 50)
+
+lasso_tuned <- tune_grid(
+  oecd_wf_lasso,
+  resamples = cross_validation_folds,
+  grid = penalty_grid
+)
+
+lasso_tuned %>% collect_metrics()
+
+lasso_tuned %>% select_best(metric="rmse")
+
+```
+
+
+```{r}
+oecd_wf_lasso_finalized <- finalize_workflow(oecd_wf_lasso, lasso_tuned %>% select_best(metric="rmse"))
+
+oecd_lasso_fit <- oecd_wf_lasso_finalized %>% fit(oecd_train)
+
+augment(oecd_lasso_fit, oecd_test) %>% metrics(truth = `Age-adjusted mortality rate_Total`, estimate = .pred)
+```
+
+
+### Ridge Model
+
+
+```{r}
+linear_ridge <- linear_reg(penalty = tune(), mixture = 0) %>%
+  set_engine("glmnet")
+
+oecd_wf_ridge <- oecd_wf %>%
+  add_model(linear_ridge)
+
+penalty_grid <- grid_regular(penalty(range = c(-20, 0)), levels = 50)
+
+ridge_tuned <- tune_grid(
+  oecd_wf_ridge,
+  resamples = cross_validation_folds,
+  grid = penalty_grid
+)
+
+ridge_tuned %>% collect_metrics()
+
+ridge_tuned %>% select_best(metric="rmse")
+```
+
+
+### Mixed Lasso + Ridge
+
+Elastic Net
+
+
+```{r}
+linear_elastic <- linear_reg(penalty = tune(), mixture = tune()) %>%
+  set_engine("glmnet")
+
+oecd_wf_elastic <- oecd_wf %>%
+  add_model(linear_elastic)
+
+penalty_mixture_grid <- grid_regular(penalty(range = c(-20, 0)), mixture(), levels = c(10, 10))
+
+elastic_tuned_grid <- tune_grid(
+  oecd_wf_elastic,
+  resamples = cross_validation_folds,
+  grid = penalty_mixture_grid
+)
+
+elastic_tuned_grid %>% collect_metrics()
+
+elastic_tuned_grid %>% select_best()
+```
+
+
+```{r}
+oecd_wf_elastic_finalized <- finalize_workflow(oecd_wf_elastic, elastic_tuned_grid %>% select_best())
+
+oecd_elastic_fit <- oecd_wf_elastic_finalized %>% fit(oecd_train)
+
+augment(oecd_elastic_fit, oecd_test) %>% metrics(truth = `Age-adjusted mortality rate_Total`, estimate = .pred)
+```
+
+
+### Random forest
+
+
+```{r}
+rf_model <- rand_forest(mode = "regression", mtry = 3, trees = 100, min_n = 10)
+
+oecd_rf_wf <- oecd_wf %>%
+  add_model(rf_model)
+
+rf_fit <- oecd_rf_wf %>% fit(oecd_train)
+
+augment(rf_fit, oecd_test) %>% metrics(truth = `Age-adjusted mortality rate_Total`, estimate = .pred)
+
+```
+
+
+```{r}
+rf_model_hyp <- rand_forest(mode = "regression", mtry = tune(), trees = 100, min_n = tune())
+
+oecd_rf_wf_hyp <- oecd_wf %>%
+  add_model(rf_model_hyp)
+
+rf_grid <- grid_regular(
+  mtry(range = c(2,6)),
+  min_n(range = c(2, 40)),
+  levels = c(5, 5)
+)
+
+rf_tuned_grid <- tune_grid(
+  oecd_rf_wf_hyp,
+  resamples = cross_validation_folds,
+  grid = rf_grid
+)
+
+
+select_best(rf_tuned_grid)
+```
+
+
+
+```{r}
+
+oecd_rf_wf_finalized <- oecd_rf_wf_hyp %>% finalize_workflow(select_best(rf_tuned_grid))
+
+rf_fit <- oecd_rf_wf %>% fit(oecd_train)
+
+augment(rf_fit, oecd_test) %>% metrics(truth = `Age-adjusted mortality rate_Total`, estimate = .pred)
+```
+
+### SAve Model
+
+
+```{r}
+rf_fit %>% 
+  extract_fit_parsnip() %>%
+  saveRDS("best_oecd_model.RDS")
+```
+
